@@ -29,9 +29,21 @@ function requireEnv(name: keyof NodeJS.ProcessEnv) {
   return value;
 }
 
+function getDefaultAppUrl() {
+  if (process.env.NEXT_PUBLIC_APP_URL) {
+    return process.env.NEXT_PUBLIC_APP_URL;
+  }
+
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL}`;
+  }
+
+  return "http://localhost:3000";
+}
+
 export const env = {
   NODE_ENV: getEnvValue("NODE_ENV", "development"),
-  NEXT_PUBLIC_APP_URL: getEnvValue("NEXT_PUBLIC_APP_URL", "http://localhost:3000"),
+  NEXT_PUBLIC_APP_URL: getDefaultAppUrl(),
   NEXT_PUBLIC_SUPABASE_URL: getEnvValue("NEXT_PUBLIC_SUPABASE_URL"),
   NEXT_PUBLIC_SUPABASE_ANON_KEY: getEnvValue("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
   SUPABASE_SERVICE_ROLE_KEY: getEnvValue("SUPABASE_SERVICE_ROLE_KEY"),

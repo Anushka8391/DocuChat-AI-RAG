@@ -16,9 +16,12 @@ export function GoogleSignInButton({
   const [isLoading, setIsLoading] = useState(false);
 
   const redirectTo = useMemo(() => {
+    const browserOrigin = typeof window === "undefined" ? "" : window.location.origin;
+    const configuredBaseUrl = process.env.NEXT_PUBLIC_APP_URL;
     const baseUrl =
-      process.env.NEXT_PUBLIC_APP_URL ??
-      (typeof window === "undefined" ? "" : window.location.origin);
+      configuredBaseUrl && !configuredBaseUrl.includes("localhost")
+        ? configuredBaseUrl
+        : browserOrigin;
 
     return `${baseUrl}/auth/callback?next=${encodeURIComponent(next)}`;
   }, [next]);

@@ -1,13 +1,13 @@
-# Vercel Deployment Checklist
+﻿# Vercel Deployment Checklist
 
-## ✅ Code Quality
+## âœ… Code Quality
 - [x] No TypeScript errors
 - [x] No ESLint warnings
 - [x] No hydration mismatches
 - [x] Production build successful
 - [x] All API routes properly configured
 
-## 🔐 Required Environment Variables (Set in Vercel)
+## ðŸ” Required Environment Variables (Set in Vercel)
 
 Add these to your Vercel project settings:
 
@@ -21,10 +21,10 @@ SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 OPENAI_API_KEY=your_gemini_api_key  (or GEMINI_API_KEY)
 
 # App Configuration
-NEXT_PUBLIC_APP_URL=https://your-domain.vercel.app
+NEXT_PUBLIC_APP_URL=https://agentic-rag-gules.vercel.app
 ```
 
-## 🗄️ Database Setup (Supabase)
+## ðŸ—„ï¸ Database Setup (Supabase)
 
 Run these migrations in your Supabase SQL editor:
 
@@ -34,20 +34,20 @@ Run these migrations in your Supabase SQL editor:
 2. supabase/migrations/20260410_create_uploaded_files.sql
 3. supabase/migrations/20260411_add_system_prompt_to_profiles.sql
 4. supabase/migrations/20260411_create_chat_history.sql
-5. supabase/migrations/20260411_create_rag_documents.sql  ← Important for RAG features
+5. supabase/migrations/20260411_create_rag_documents.sql  â† Important for RAG features
 ```
 
-## 🌐 OAuth Configuration (Google)
+## ðŸŒ OAuth Configuration (Google)
 
 1. Go to Google Cloud Console
 2. Create OAuth 2.0 Credentials (Web application)
 3. Add Redirect URI:
    ```
-   https://your-domain.vercel.app/auth/callback
+   https://agentic-rag-gules.vercel.app/auth/callback
    ```
 4. Update Supabase Auth settings with Client ID and Secret
 
-## 📦 Deployment Steps
+## ðŸ“¦ Deployment Steps
 
 1. **Connect to Vercel:**
    ```bash
@@ -56,7 +56,7 @@ Run these migrations in your Supabase SQL editor:
    ```
 
 2. **Add Environment Variables in Vercel Dashboard**
-   - Go to Project Settings → Environment Variables
+   - Go to Project Settings â†’ Environment Variables
    - Add all required vars from section above
 
 3. **Set Production Domain**
@@ -69,25 +69,25 @@ Run these migrations in your Supabase SQL editor:
    vercel deploy --prod
    ```
 
-## ✨ Features Ready
+## âœ¨ Features Ready
 
-- ✅ Real-time date and time queries
-- ✅ Weather lookup by location (free API)
-- ✅ File upload and chat (Markdown, Text)
-- ✅ Conversation history
-- ✅ Google OAuth authentication
-- ✅ System prompt customization
-- ✅ Theme switcher (dark/light/auto)
-- ✅ Random suggestion prompts on every chat
-- ✅ ChatGPT-style UI design
+- âœ… Real-time date and time queries
+- âœ… Weather lookup by location (free API)
+- âœ… File upload and chat (Markdown, Text)
+- âœ… Conversation history
+- âœ… Google OAuth authentication
+- âœ… System prompt customization
+- âœ… Theme switcher (dark/light/auto)
+- âœ… Random suggestion prompts on every chat
+- âœ… ChatGPT-style UI design
 
-## 🐛 Known Limitations
+## ðŸ› Known Limitations
 
 - **Vector RAG indexing**: Only works after running migration #5
 - **File Q&A fallback**: Uses keyword/embedding ranking if vector table missing
 - **Weather API**: Open-Meteo (free, no auth needed)
 
-## 🚀 Post-Deployment
+## ðŸš€ Post-Deployment
 
 1. Test OAuth flow (sign in with Google)
 2. Upload a test `.md` or `.txt` file
@@ -95,9 +95,10 @@ Run these migrations in your Supabase SQL editor:
 4. Ask: "What's the weather in [city]?"
 5. Ask a question about the uploaded file
 
-## 📝 Notes
+## ðŸ“ Notes
 
 - Hydration issues fixed (random prompts only generated client-side)
 - All routes protected with Supabase auth (except /login and /)
 - Middleware handles session refresh automatically
 - API key fallback: tries GEMINI_API_KEY or OPENAI_API_KEY
+

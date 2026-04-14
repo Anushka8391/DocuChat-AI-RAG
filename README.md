@@ -1,4 +1,4 @@
-# AgenticRAG
+﻿# AgenticRAG
 
 AgenticRAG is a Next.js app for AI chat with:
 - File-grounded answers for .md and .txt uploads
@@ -77,7 +77,7 @@ git push
 
 Add these in Project Settings > Environment Variables:
 
-- NEXT_PUBLIC_APP_URL = https://your-domain.vercel.app
+- NEXT_PUBLIC_APP_URL = https://agentic-rag-gules.vercel.app
 - NEXT_PUBLIC_SUPABASE_URL
 - NEXT_PUBLIC_SUPABASE_ANON_KEY
 - SUPABASE_SERVICE_ROLE_KEY
@@ -88,7 +88,7 @@ Add these in Project Settings > Environment Variables:
 
 - In Supabase Auth, configure Google OAuth provider
 - Add callback URL:
-	- https://your-domain.vercel.app/auth/callback
+  - https://agentic-rag-gules.vercel.app/auth/callback
 
 ### 5. Run database migrations
 
@@ -118,4 +118,3 @@ npx vercel deploy --prod
 MIT License
 
 Copyright (c) 2026 Srivans Katriyar
-#
