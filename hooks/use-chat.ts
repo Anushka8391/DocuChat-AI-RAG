@@ -60,69 +60,6 @@ function getPreview(messages: ChatMessage[]) {
   return lastMessage.content.replace(/\s+/g, " ").trim().slice(0, 88);
 }
 
-function wait(ms: number) {
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, ms);
-  });
-}
-
-function buildMockReply(prompt: string, attachedFile?: UploadedFileMetadata | null) {
-  const lowerPrompt = prompt.toLowerCase();
-  const usedTools: string[] = [];
-
-  if (attachedFile) {
-    usedTools.push("vector_search");
-  }
-
-  if (/(latest|today|current|news|research|web)/.test(lowerPrompt)) {
-    usedTools.push("web_search");
-  }
-
-  if (/(code|component|next|react|tailwind|ui|website|design|bug|build)/.test(lowerPrompt)) {
-    usedTools.push("code_reasoner");
-  }
-
-  if (usedTools.length === 0) {
-    usedTools.push("memory_search");
-  }
-
-  const sources = attachedFile
-    ? [attachedFile.name, "Conversation context", "Workspace UI kit"]
-    : ["Conversation context", "Workspace UI kit", "Product prompt"];
-
-  const steps = [
-    "Reviewed the user request and selected relevant context.",
-    attachedFile
-      ? `Referenced ${attachedFile.name} to ground the answer.`
-      : "Used prior conversation state to keep continuity.",
-    `Drafted the response with ${usedTools.join(", ")}.`,
-  ];
-
-  if (/(website|landing|design|ui|chat)/.test(lowerPrompt)) {
-    return {
-      content: `### Clean chat direction\n\nHere is a polished direction for your AI experience:\n\n- full-height responsive layout\n- sidebar for chat history\n- sticky composer with upload support\n- markdown answers with rich code blocks\n\n\`\`\`tsx\nexport default function ChatPreview() {\n  return <div className="rounded-2xl p-4">Clean chat UI</div>;\n}\n\`\`\`\n\nThe response appears smoothly as it is generated for a more natural chat feel.`,
-      sources,
-      usedTools,
-      steps,
-    };
-  }
-
-  if (/(document|upload|rag|source)/.test(lowerPrompt)) {
-    return {
-      content: `### RAG-ready answer\n\nI can show grounded results below each response:\n\n1. retrieved sources\n2. optional reasoning steps\n\n> The interface is ready for a clean retrieval experience with minimal clutter.`,
-      sources,
-      usedTools,
-      steps,
-    };
-  }
-
-  return {
-    content: `### Draft response\n\nI understood your request and generated a clean assistant reply with:\n\n- smooth streaming\n- markdown formatting\n- hover actions for copy and regenerate\n\nIf you want, I can keep extending this into a fully connected production workflow next.`,
-    sources,
-    usedTools,
-    steps,
-  };
-}
 
 const starterConversations: StoredConversation[] = [
   {
@@ -346,14 +283,8 @@ export function useChat(initialMessages: ChatMessage[] = []) {
       conversation: StoredConversation,
       attachedFile?: UploadedFileMetadata | null,
     ) => {
-      const generated = buildMockReply(prompt, attachedFile);
       const assistantId = crypto.randomUUID();
       const createdAt = new Date().toISOString();
-      const metadata = {
-        sources: generated.sources,
-        usedTools: generated.usedTools,
-        steps: generated.steps,
-      };
 
       setMessages([
         ...nextMessages,
@@ -362,33 +293,110 @@ export function useChat(initialMessages: ChatMessage[] = []) {
           role: "assistant",
           content: "",
           createdAt,
-          ...metadata,
         },
       ]);
 
       let streamedContent = "";
-      const tokens = generated.content.split(/(\s+)/);
+      let finalMetadata: Pick<ChatMessage, "sources" | "usedTools" | "steps"> = {};
 
-      for (const token of tokens) {
-        streamedContent += token;
+      try {
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            messages: nextMessages,
+            conversationId: conversation.id,
+            attachedFile: attachedFile ?? null,
+          }),
+        });
 
+        if (!res.ok || !res.body) {
+          throw new Error(`API error: ${res.status}`);
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const parts = buffer.split("\n\n");
+          buffer = parts.pop() ?? "";
+
+          for (const part of parts) {
+            const eventMatch = part.match(/^event: (\w+)\ndata: (.+)$/s);
+            if (!eventMatch) continue;
+
+            const [, eventType, rawData] = eventMatch;
+            let payload: Record<string, unknown>;
+
+            try {
+              payload = JSON.parse(rawData) as Record<string, unknown>;
+            } catch {
+              continue;
+            }
+
+            if (eventType === "chunk") {
+              streamedContent += String(payload.content ?? "");
+              setMessages((current) =>
+                current.map((message) =>
+                  message.id === assistantId
+                    ? { ...message, content: streamedContent }
+                    : message,
+                ),
+              );
+            } else if (eventType === "done") {
+              const agent = payload.agent as Record<string, unknown> | undefined;
+              finalMetadata = {
+                sources: Array.isArray(agent?.sources)
+                  ? (agent.sources as string[])
+                  : undefined,
+                usedTools: Array.isArray(agent?.usedTools)
+                  ? (agent.usedTools as string[])
+                  : undefined,
+              };
+              const reply = payload.reply as Record<string, unknown> | undefined;
+              if (typeof reply?.content === "string") {
+                streamedContent = reply.content;
+              }
+              setMessages((current) =>
+                current.map((message) =>
+                  message.id === assistantId
+                    ? { ...message, content: streamedContent, ...finalMetadata }
+                    : message,
+                ),
+              );
+            } else if (eventType === "error") {
+              streamedContent = String(payload.details ?? payload.error ?? "Something went wrong.");
+              setMessages((current) =>
+                current.map((message) =>
+                  message.id === assistantId
+                    ? { ...message, content: streamedContent }
+                    : message,
+                ),
+              );
+            }
+          }
+        }
+      } catch (err) {
+        const errorText = err instanceof Error ? err.message : "Request failed.";
+        streamedContent = errorText;
         setMessages((current) =>
           current.map((message) =>
-            message.id === assistantId ? { ...message, content: streamedContent } : message,
+            message.id === assistantId ? { ...message, content: errorText } : message,
           ),
         );
-
-        if (token.trim()) {
-          await wait(16);
-        }
       }
 
       const finalAssistantMessage: ChatMessage = {
         id: assistantId,
         role: "assistant",
-        content: generated.content,
+        content: streamedContent,
         createdAt,
-        ...metadata,
+        ...finalMetadata,
       };
 
       upsertConversation({
