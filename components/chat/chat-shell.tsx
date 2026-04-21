@@ -550,6 +550,21 @@ export function ChatShell({ user }: ChatShellProps) {
   }, [showSearch]);
 
   useEffect(() => {
+    if (!activeConversationMenuId) {
+      return;
+    }
+
+    const handlePointerDown = () => {
+      setActiveConversationMenuId(null);
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, [activeConversationMenuId]);
+
+  useEffect(() => {
     if (isProfileMenuOpen) {
       return;
     }
@@ -797,7 +812,7 @@ export function ChatShell({ user }: ChatShellProps) {
                 <button
                   type="button"
                   aria-label="Refresh workspace"
-                  className="group relative flex h-10 w-10 items-center justify-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent)] shadow-sm transition duration-200 hover:-translate-y-[1px] hover:shadow-[0_18px_38px_-18px_rgba(16,185,129,0.6)] hover:brightness-110"
+                  className="group/icon relative flex h-10 w-10 items-center justify-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent)] shadow-sm transition duration-200 hover:-translate-y-[1px] hover:shadow-[0_18px_38px_-18px_rgba(16,185,129,0.6)] hover:brightness-110"
                   onClick={resetToNewChat}
                 >
                   <LogoIcon className="h-5 w-5" />
@@ -807,7 +822,7 @@ export function ChatShell({ user }: ChatShellProps) {
                 <button
                   type="button"
                   aria-label="Collapse panel"
-                  className="group relative flex h-10 w-10 items-center justify-center rounded-xl text-[var(--foreground)] transition duration-200 hover:-translate-y-[1px] hover:bg-[var(--surface)]/90 hover:text-white hover:shadow-[0_18px_38px_-18px_rgba(16,185,129,0.4)]"
+                  className="group/icon relative flex h-10 w-10 items-center justify-center rounded-xl text-[var(--foreground)] transition duration-200 hover:-translate-y-[1px] hover:bg-[var(--surface)]/90 hover:text-white hover:shadow-[0_18px_38px_-18px_rgba(16,185,129,0.4)]"
                   onClick={() => setIsSidebarOpen(false)}
                 >
                   <SidebarToggleIcon isOpen={isSidebarOpen} />
@@ -818,7 +833,7 @@ export function ChatShell({ user }: ChatShellProps) {
               <button
                 type="button"
                 aria-label="Expand panel"
-                className="group relative mx-auto flex h-9 w-9 items-center justify-center rounded-xl text-[var(--foreground)] transition duration-200 hover:-translate-y-[1px] hover:bg-[var(--surface)]/90 hover:text-white hover:shadow-[0_18px_38px_-18px_rgba(16,185,129,0.4)]"
+                className="group/icon relative mx-auto flex h-9 w-9 items-center justify-center rounded-xl text-[var(--foreground)] transition duration-200 hover:-translate-y-[1px] hover:bg-[var(--surface)]/90 hover:text-white hover:shadow-[0_18px_38px_-18px_rgba(16,185,129,0.4)]"
                 onClick={() => setIsSidebarOpen(true)}
               >
                 <LogoIcon className="h-4 w-4" />
@@ -831,7 +846,7 @@ export function ChatShell({ user }: ChatShellProps) {
                 type="button"
                 aria-label="Start a new chat"
                 className={cn(
-                  "group relative flex h-10 items-center rounded-xl text-[var(--foreground)] transition duration-200 hover:-translate-y-[1px] hover:bg-[var(--surface)]/90 hover:text-white hover:shadow-[0_18px_38px_-18px_rgba(16,185,129,0.35)]",
+                  "group/icon relative flex h-10 items-center rounded-xl text-[var(--foreground)] transition duration-200 hover:-translate-y-[1px] hover:bg-[var(--surface)]/90 hover:text-white hover:shadow-[0_18px_38px_-18px_rgba(16,185,129,0.35)]",
                   isSidebarOpen ? "w-full gap-3 px-3" : "mx-auto w-10 justify-center",
                 )}
                 onClick={resetToNewChat}
@@ -844,7 +859,7 @@ export function ChatShell({ user }: ChatShellProps) {
                 type="button"
                 aria-label="Find your chats"
                 className={cn(
-                  "group relative flex h-10 items-center rounded-xl text-[var(--foreground)] transition duration-200 hover:-translate-y-[1px] hover:bg-[var(--surface)]/90 hover:text-white hover:shadow-[0_18px_38px_-18px_rgba(16,185,129,0.35)]",
+                  "group/icon relative flex h-10 items-center rounded-xl text-[var(--foreground)] transition duration-200 hover:-translate-y-[1px] hover:bg-[var(--surface)]/90 hover:text-white hover:shadow-[0_18px_38px_-18px_rgba(16,185,129,0.35)]",
                   isSidebarOpen ? "w-full gap-3 px-3" : "mx-auto w-10 justify-center",
                 )}
                 onClick={() => {
@@ -960,8 +975,10 @@ export function ChatShell({ user }: ChatShellProps) {
                               type="button"
                               className="rounded-lg border border-[color:var(--border)] bg-[var(--panel)] p-1.5 text-[var(--muted)] transition duration-200 hover:-translate-y-[1px] hover:text-[var(--foreground)] hover:shadow-[0_18px_38px_-18px_rgba(16,185,129,0.35)]"
                               aria-label="Conversation options"
-                              onClick={(event) => {
+                              onPointerDown={(event) => {
                                 event.stopPropagation();
+                              }}
+                              onClick={() => {
                                 setActiveConversationMenuId((current) => current === thread.id ? null : thread.id);
                               }}
                             >
@@ -969,7 +986,7 @@ export function ChatShell({ user }: ChatShellProps) {
                             </button>
 
                             {isMenuOpen ? (
-                              <div className="absolute right-0 top-10 z-40 w-40 rounded-2xl border border-[color:var(--border)] bg-[var(--panel-strong)] p-1.5 shadow-2xl backdrop-blur-xl">
+                              <div onPointerDown={(e) => e.stopPropagation()} className="absolute right-0 top-10 z-40 w-40 rounded-2xl border border-[color:var(--border)] bg-[var(--panel-strong)] p-1.5 shadow-2xl backdrop-blur-xl">
                                 <button type="button" className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm text-[var(--foreground)] transition hover:bg-[var(--surface)]" onClick={() => void handleShareConversation(thread.title, thread.preview)}>
                                   <ShareIcon className="h-3.5 w-3.5" />
                                   Share
