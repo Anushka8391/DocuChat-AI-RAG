@@ -1,5 +1,3 @@
-import { redirect } from "next/navigation";
-
 import { ChatShell } from "@/components/chat/chat-shell";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getUserSystemPrompt } from "@/services/auth/profile.service";
@@ -30,17 +28,13 @@ export default async function ChatPage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) {
-    redirect("/login?next=/chat");
-  }
-
-  const initialSystemPrompt = await getUserSystemPrompt(user.id);
+  const initialSystemPrompt = user ? await getUserSystemPrompt(user.id) : "";
 
   return (
     <ChatShell
       user={{
-        email: user.email ?? null,
-        name: getDisplayName(user.user_metadata),
+        email: user?.email ?? "guest@local.dev",
+        name: getDisplayName(user?.user_metadata) ?? "Guest User",
       }}
       initialSystemPrompt={initialSystemPrompt}
     />

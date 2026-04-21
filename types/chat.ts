@@ -8,6 +8,9 @@ export interface ChatMessage {
   role: ChatRole;
   content: string;
   createdAt: string;
+  sources?: string[];
+  usedTools?: string[];
+  steps?: string[];
 }
 
 export interface ChatRequestBody {
