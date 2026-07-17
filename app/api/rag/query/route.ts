@@ -64,6 +64,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json(result, { status: 200 });
   } catch (error) {
+    console.error("[api/rag/query POST] retrieval query failed", error);
+
     const payload: ApiError = {
       error: "Unable to run the retrieval query.",
       details: getErrorMessage(error),

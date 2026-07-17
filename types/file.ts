@@ -6,7 +6,7 @@ export interface UploadedFileMetadata {
   mimeType: string;
   bucket: string;
   path: string;
-  extension: "md" | "txt";
+  extension: "md" | "txt" | "pdf";
   createdAt: string;
   downloadUrl: string | null;
 }

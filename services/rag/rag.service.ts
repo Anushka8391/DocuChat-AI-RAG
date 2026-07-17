@@ -2,9 +2,10 @@ import { SupabaseVectorStore } from "@langchain/community/vectorstores/supabase"
 import { ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
 import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
 
+
 import { env } from "@/lib/env";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { getErrorMessage } from "@/lib/utils";
+import { getErrorMessage, logError } from "@/lib/utils";
 import type { RagAnswerResult, RagIndexInput, RagIndexResult, RagMatch, RagQueryInput } from "@/types";
 
 const STORAGE_BUCKET_NAME = "knowledge-files";
@@ -175,7 +176,8 @@ export class LangChainRagService {
       return ranked
         .sort((left, right) => right.score - left.score)
         .slice(0, input.limit ?? 4);
-    } catch {
+    } catch (error) {
+      logError("rag.selectRelevantTextChunks.embeddingFallback", error, { query: input.query });
       const ranked = rankChunksByQueryTerms(
         docs.map((doc) => ({
           pageContent: doc.pageContent,
@@ -244,7 +246,19 @@ export class LangChainRagService {
       throw error ?? new Error("Unable to download the uploaded file from Supabase storage.");
     }
 
-    const text = await data.text();
+    let text: string;
+
+    if (input.storagePath.toLowerCase().endsWith(".pdf")) {
+      const buffer = Buffer.from(await data.arrayBuffer());
+
+      const pdfModule = await import("pdf-parse");
+      const pdfParse = pdfModule.default;
+
+      const pdf = await pdfParse(buffer);
+      text = pdf.text ?? "";
+    } else {
+      text = await data.text();
+    }
 
     if (!text.trim()) {
       throw new Error("The uploaded file is empty.");
@@ -265,12 +279,23 @@ export class LangChainRagService {
       },
     ]);
 
+    if (!docs.length) {
+      throw new Error("No text chunks were produced from the uploaded file.");
+    }
+
     const vectorStore = await this.getVectorStore();
     const ids = docs.map((_, index) => `${input.fileId}-${index}`);
 
+    // DEBUG
+    const embeddings = this.createEmbeddings();
+    const vector = await embeddings.embedQuery("hello world");
+
+    console.log("Embedding length:", vector.length);
+    console.log("First 5 values:", vector.slice(0, 5));
+
     await vectorStore.addDocuments(docs, { ids });
 
-    return {
+    return { 
       fileId: input.fileId,
       chunkCount: docs.length,
       message: `${input.fileName} indexed into ${docs.length} chunks.`,
@@ -308,9 +333,31 @@ export class LangChainRagService {
         if (indexedMatches.length) {
           return this.generateAnswerFromMatches(input, indexedMatches);
         }
-      } catch {
-        // Fall back to in-memory retrieval for files that have not been indexed yet.
+
+        return {
+          answer: `No indexed chunks were found yet for ${input.fileName ?? "the attached file"}. Wait for indexing to finish and try again.`,
+          matches: [],
+          warning: "The attached document has not been indexed yet.",
+        };
+      } catch (error) {
+        console.error("[rag.answerQuestionFromFile] indexed retrieval failed", error, {
+          fileId: input.fileId,
+          userId: input.userId,
+          storagePath: input.storagePath,
+          bucketName: input.bucketName ?? STORAGE_BUCKET_NAME,
+        });
+
+        logError("rag.answerQuestionFromFile.indexedRetrievalFallback", error, {
+          fileId: input.fileId,
+          userId: input.userId,
+        });
       }
+
+      return {
+        answer: `No indexed chunks were found yet for ${input.fileName ?? "the attached file"}. Wait for indexing to finish and try again.`,
+        matches: [],
+        warning: "The attached document has not been indexed yet.",
+      };
     }
 
     const rawText = await this.loadTextFromStorage({

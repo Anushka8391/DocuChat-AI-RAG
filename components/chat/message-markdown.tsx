@@ -7,7 +7,7 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { cn, getErrorMessage } from "@/lib/utils";
 
 function CodeBlock({
   className,
@@ -25,8 +25,9 @@ function CodeBlock({
       await navigator.clipboard.writeText(code);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1200);
-    } catch {
+    } catch (error) {
       setCopied(false);
+      console.error("Unable to copy code block", getErrorMessage(error));
     }
   };
 

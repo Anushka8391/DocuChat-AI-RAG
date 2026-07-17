@@ -169,8 +169,8 @@ export function FileUpload({
     }
 
     const normalizedName = file.name.toLowerCase();
-    if (!normalizedName.endsWith(".md") && !normalizedName.endsWith(".txt")) {
-      setError("Only .md and .txt files are allowed.");
+    if (!normalizedName.endsWith(".md") && !normalizedName.endsWith(".txt") && !normalizedName.endsWith(".pdf")) {
+      setError("Only .md, .txt, and .pdf files are allowed.");
       setStatus(null);
       event.target.value = "";
       return;
@@ -191,6 +191,14 @@ export function FileUpload({
 
       const payload = (await response.json()) as ApiError | FileUploadResponse;
 
+      console.error("[FileUpload.handleFileChange] upload response", {
+        ok: response.ok,
+        status: response.status,
+        fileId: isFileUploadResponse(payload) ? payload.file.id : null,
+        fileName: isFileUploadResponse(payload) ? payload.file.name : null,
+        payload,
+      });
+
       if (!response.ok) {
         throw new Error(getErrorText(payload));
       }
@@ -201,6 +209,12 @@ export function FileUpload({
 
       setFiles((current) => [payload.file, ...current.filter((item) => item.id !== payload.file.id)]);
       setStatus(payload.message ?? `${file.name} uploaded successfully.`);
+      console.error("[FileUpload.handleFileChange] onUploadComplete", {
+        fileId: payload.file.id,
+        fileName: payload.file.name,
+        bucket: payload.file.bucket,
+        path: payload.file.path,
+      });
       onUploadComplete?.(payload.file);
       setIsMenuOpen(true);
     } catch (uploadError) {

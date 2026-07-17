@@ -217,15 +217,49 @@ function getCurrentDateTime(timeZone?: string) {
 
 async function resolveAttachedFileForUser(userId: string, fileId: string) {
   const admin = createSupabaseAdminClient();
-  const { data, error } = await admin
+  const query = admin
     .from("uploaded_files")
     .select("id, user_id, file_name, bucket_name, storage_path")
     .eq("id", fileId)
-    .eq("user_id", userId)
-    .single<UploadedFileRow>();
+    .eq("user_id", userId);
+
+  console.error("[tool-registry.resolveAttachedFileForUser] query", {
+    table: "public.uploaded_files",
+    select: "id, user_id, file_name, bucket_name, storage_path",
+    filters: { id: fileId, user_id: userId },
+  });
+
+  const { data, error } = await query.maybeSingle<UploadedFileRow>();
+
+  console.error("[tool-registry.resolveAttachedFileForUser] result", {
+    table: "public.uploaded_files",
+    returnedRow: data ?? null,
+    error: error ?? null,
+  });
 
   if (error || !data) {
-    throw error ?? new Error("The attached file could not be verified for this user.");
+    throw error ?? new Error(`No uploaded_files row found for fileId ${fileId} and userId ${userId}.`);
+  }
+
+  const { data: indexedDocuments, error: documentsError } = await admin
+    .from("documents")
+    .select("id, metadata")
+    .eq("metadata->>fileId", fileId)
+    .limit(20);
+
+  console.error("[tool-registry.resolveAttachedFileForUser] documents lookup", {
+    table: "public.documents",
+    filters: { fileId },
+    returnedRows: indexedDocuments ?? [],
+    error: documentsError ?? null,
+  });
+
+  if (documentsError) {
+    throw documentsError;
+  }
+
+  if (!indexedDocuments?.length) {
+    throw new Error(`No indexed documents exist yet for fileId ${fileId}. Wait for indexing to finish before retrieval.`);
   }
 
   return {
@@ -240,7 +274,33 @@ export function createAgentTools(context: AgentToolContext) {
   const retrievalTool = tool(
     async (input) => {
       const { query, fileId } = input as { query: string; fileId?: string };
-      const effectiveFileId = fileId ?? context.attachedFile?.id;
+      const contextFileId = context.attachedFile?.id;
+      const requestedFileId = typeof fileId === "string" ? fileId.trim() : undefined;
+      const effectiveFileId = contextFileId ?? requestedFileId;
+
+      console.error("[tool-registry.retrieval_search] incoming ids", {
+        userId: context.userId,
+        requestedFileId: requestedFileId ?? null,
+        contextFileId: contextFileId ?? null,
+        effectiveFileId: effectiveFileId ?? null,
+        query,
+      });
+
+      if (requestedFileId && contextFileId && requestedFileId !== contextFileId) {
+        console.error("[tool-registry.retrieval_search] fileId mismatch, preferring attached file id", {
+          requestedFileId,
+          contextFileId,
+          effectiveFileId,
+        });
+      }
+
+      if (requestedFileId && !/^([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i.test(requestedFileId)) {
+        console.error("[tool-registry.retrieval_search] invalid model-supplied fileId", {
+          requestedFileId,
+          contextFileId: contextFileId ?? null,
+          query,
+        });
+      }
 
       try {
         if (effectiveFileId) {
@@ -279,6 +339,12 @@ export function createAgentTools(context: AgentToolContext) {
           matches: formatMatches(matches),
         });
       } catch (error) {
+        console.error("[tool-registry.retrieval_search] failed", error, {
+          userId: context.userId,
+          fileId: effectiveFileId ?? null,
+          query,
+        });
+
         return JSON.stringify({
           query,
           fileId: effectiveFileId ?? null,

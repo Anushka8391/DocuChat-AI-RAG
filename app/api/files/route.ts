@@ -33,6 +33,9 @@ function mapRowToMetadata(
   row: UploadedFileRow,
   downloadUrl: string | null,
 ): UploadedFileMetadata {
+  const lowerName = row.file_name.toLowerCase();
+  const extension = lowerName.endsWith(".pdf") ? "pdf" : lowerName.endsWith(".md") ? "md" : "txt";
+
   return {
     id: row.id,
     userId: row.user_id,
@@ -41,7 +44,7 @@ function mapRowToMetadata(
     mimeType: row.mime_type,
     bucket: row.bucket_name,
     path: row.storage_path,
-    extension: row.file_name.toLowerCase().endsWith(".md") ? "md" : "txt",
+    extension,
     createdAt: row.created_at,
     downloadUrl,
   };
@@ -194,6 +197,22 @@ export async function POST(request: Request) {
     const admin = await ensureStorageBucket();
     const storagePath = `${user.id}/${Date.now()}-${randomUUID()}-${sanitizeFileName(file.name)}`;
 
+    console.error("[api/files POST] upload start", {
+      userId: user.id,
+      fileName: file.name,
+      fileSize: file.size,
+      mimeType: file.type || "text/plain",
+      bucketName: STORAGE_BUCKET_NAME,
+      storagePath,
+    });
+
+    console.error("[api/files POST] storage upload request", {
+      table: `storage.objects via bucket ${STORAGE_BUCKET_NAME}`,
+      storagePath,
+      contentType: file.type || "text/plain",
+      upsert: false,
+    });
+
     const { error: uploadError } = await admin.storage
       .from(STORAGE_BUCKET_NAME)
       .upload(storagePath, file, {
@@ -202,9 +221,33 @@ export async function POST(request: Request) {
         upsert: false,
       });
 
+    console.error("[api/files POST] storage upload result", {
+      storagePath,
+      uploadError: uploadError ?? null,
+    });
+
     if (uploadError) {
+      console.error("[api/files POST] storage upload failed", uploadError, {
+        userId: user.id,
+        storagePath,
+        bucketName: STORAGE_BUCKET_NAME,
+      });
+
       throw uploadError;
     }
+
+    console.error("[api/files POST] inserting uploaded_files row", {
+      table: "public.uploaded_files",
+      values: {
+        user_id: user.id,
+        file_name: file.name,
+        file_size: file.size,
+        mime_type: file.type || "text/plain",
+        bucket_name: STORAGE_BUCKET_NAME,
+        storage_path: storagePath,
+      },
+      returning: "id, user_id, file_name, file_size, mime_type, bucket_name, storage_path, created_at",
+    });
 
     const { data, error: insertError } = await admin
       .from("uploaded_files")
@@ -219,8 +262,26 @@ export async function POST(request: Request) {
       .select("id, user_id, file_name, file_size, mime_type, bucket_name, storage_path, created_at")
       .single<UploadedFileRow>();
 
+    console.error("[api/files POST] uploaded_files insert result", {
+      table: "public.uploaded_files",
+      storagePath,
+      insertError: insertError ?? null,
+      returnedRow: data ?? null,
+    });
+
     if (insertError) {
+      console.error("[api/files POST] uploaded_files insert failed; rolling back storage object", insertError, {
+        userId: user.id,
+        storagePath,
+        bucketName: STORAGE_BUCKET_NAME,
+      });
+
       await admin.storage.from(STORAGE_BUCKET_NAME).remove([storagePath]);
+
+      console.error("[api/files POST] storage rollback completed", {
+        storagePath,
+        bucketName: STORAGE_BUCKET_NAME,
+      });
 
       if (isMissingMetadataTable(insertError)) {
         const payload: ApiError = {
@@ -237,9 +298,24 @@ export async function POST(request: Request) {
 
     const downloadUrl = await createDownloadUrl(STORAGE_BUCKET_NAME, storagePath);
 
+    console.error("[api/files POST] uploaded_files row persisted", {
+      table: "public.uploaded_files",
+      rowId: data.id,
+      storagePath,
+      downloadUrl,
+    });
+
     let message = `${file.name} uploaded successfully.`;
 
     try {
+      console.error("[api/files POST] starting ragService.indexUploadedFile", {
+        fileId: data.id,
+        userId: user.id,
+        fileName: file.name,
+        storagePath,
+        bucketName: STORAGE_BUCKET_NAME,
+      });
+
       const indexingResult = await ragService.indexUploadedFile({
         fileId: data.id,
         userId: user.id,
@@ -248,8 +324,23 @@ export async function POST(request: Request) {
         bucketName: STORAGE_BUCKET_NAME,
       });
 
+      console.error("[api/files POST] ragService.indexUploadedFile result", {
+        fileId: data.id,
+        userId: user.id,
+        chunkCount: indexingResult.chunkCount,
+        message: indexingResult.message,
+      });
+
       message = `${file.name} uploaded and indexed into ${indexingResult.chunkCount} chunks.`;
     } catch (indexError) {
+      console.error("[api/files POST] ragService.indexUploadedFile failed", indexError, {
+        userId: user.id,
+        fileId: data.id,
+        fileName: file.name,
+        storagePath,
+        bucketName: STORAGE_BUCKET_NAME,
+      });
+
       if (isMissingDocumentsTable(indexError as { code?: string; message?: string })) {
         message = `${file.name} uploaded successfully. You can chat with the attached file now, and full vector search will work after running the \`20260411_create_rag_documents.sql\` migration.`;
       } else {
@@ -262,8 +353,17 @@ export async function POST(request: Request) {
       message,
     };
 
+    console.error("[api/files POST] response payload", {
+      fileId: data.id,
+      storagePath,
+      message,
+      payload,
+    });
+
     return NextResponse.json(payload, { status: 200 });
   } catch (error) {
+    console.error("[api/files POST] fatal upload handler error", error);
+
     const payload: ApiError = {
       error: "Unable to upload the file.",
       details: getErrorMessage(error),

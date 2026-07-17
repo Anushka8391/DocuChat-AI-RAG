@@ -1,5 +1,5 @@
-const ALLOWED_EXTENSIONS = [".md", ".txt"] as const;
-const ALLOWED_MIME_TYPES = ["text/markdown", "text/plain", ""] as const;
+const ALLOWED_EXTENSIONS = [".md", ".txt", ".pdf"] as const;
+const ALLOWED_MIME_TYPES = ["text/markdown", "text/plain", "application/pdf", ""] as const;
 
 export const ALLOWED_UPLOAD_EXTENSIONS = [...ALLOWED_EXTENSIONS];
 export const ALLOWED_UPLOAD_MIME_TYPES = ALLOWED_MIME_TYPES.filter(Boolean);

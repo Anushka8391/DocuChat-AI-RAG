@@ -423,7 +423,7 @@ export function ChatShell({ user }: ChatShellProps) {
   const [archivedConversationIds, setArchivedConversationIds] = useState<string[]>([]);
   const [profilePanelView, setProfilePanelView] = useState<ProfilePanelView>("chats");
   const [archiveNotice, setArchiveNotice] = useState<string | null>(null);
-  const [visibleSuggestions, setVisibleSuggestions] = useState<string[]>(() => getRandomSuggestions());
+  const [visibleSuggestions, setVisibleSuggestions] = useState<string[]>([]);
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
     if (typeof window === "undefined") {
       return "dark";
@@ -515,6 +515,12 @@ export function ChatShell({ user }: ChatShellProps) {
   }, [themeMode]);
 
   useEffect(() => {
+    // Populate prompt suggestions only on the client to avoid
+    // server/client hydration mismatches caused by Math.random.
+    setVisibleSuggestions(getRandomSuggestions());
+  }, []);
+
+  useEffect(() => {
     if (!isProfileMenuOpen) {
       return;
     }
@@ -569,8 +575,12 @@ export function ChatShell({ user }: ChatShellProps) {
       return;
     }
 
-    setIsAccountDetailsOpen(false);
-    setProfilePanelView("chats");
+    const timeoutId = window.setTimeout(() => {
+      setIsAccountDetailsOpen(false);
+      setProfilePanelView("chats");
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
   }, [isProfileMenuOpen]);
 
   useEffect(() => {
@@ -610,27 +620,66 @@ export function ChatShell({ user }: ChatShellProps) {
     }
   };
 
-  const handleFileSelect = (event: ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
 
     if (!file) {
       return;
     }
 
+    const normalizedName = file.name.toLowerCase();
+    const extension = normalizedName.endsWith(".pdf")
+      ? "pdf"
+      : normalizedName.endsWith(".md")
+        ? "md"
+        : "txt";
+
+    // Show a local preview entry while uploading
     setAttachedFile({
       id: crypto.randomUUID(),
       userId: "local-user",
       name: file.name,
       size: file.size,
-      mimeType: file.type || "text/plain",
+      mimeType: file.type || (extension === "pdf" ? "application/pdf" : "text/plain"),
       bucket: "local-preview",
       path: file.name,
-      extension: file.name.toLowerCase().endsWith(".md") ? "md" : "txt",
+      extension,
       createdAt: new Date().toISOString(),
       downloadUrl: null,
     });
 
-    event.target.value = "";
+    // Upload the file to the server so it is available to the agent/tools
+    try {
+      const form = new FormData();
+      form.append("file", file);
+
+      const res = await fetch("/api/files", { method: "POST", body: form });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: `Upload failed: ${res.status}` }));
+        throw new Error(err?.details ?? err?.error ?? `Upload failed with ${res.status}`);
+      }
+
+      const payload = await res.json();
+      const fileMeta = payload?.file as UploadedFileMetadata | undefined;
+
+      if (!fileMeta) {
+        throw new Error("Upload succeeded but server did not return file metadata.");
+      }
+
+      setAttachedFile(fileMeta);
+    } catch (err) {
+      // Revert preview and surface error
+      setAttachedFile(null);
+      // eslint-disable-next-line no-console
+      console.error("File upload failed", err);
+      // Simple alert so the user notices; keep UX changes minimal here.
+      // TODO: Replace with in-app toast notification.
+      // @ts-expect-error - err may be Error-like
+      alert(`File upload failed: ${err?.message ?? String(err)}`);
+    } finally {
+      event.target.value = "";
+    }
   };
 
   const handleCopyMessage = async (message: ChatMessage) => {
@@ -1280,6 +1329,23 @@ export function ChatShell({ user }: ChatShellProps) {
                               </time>
                             </div>
 
+                            {message.attachments && message.attachments.length > 0 ? (
+                              <div className="mb-3 flex flex-wrap gap-2">
+                                {message.attachments.map((attachment) => (
+                                  <div
+                                    key={`${message.id}-${attachment.id}`}
+                                    className={cn(
+                                      "inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-medium text-white/90 backdrop-blur",
+                                      !isUser && "border-[color:var(--border)] bg-[var(--surface)]/70 text-[var(--foreground)]",
+                                    )}
+                                  >
+                                    <span className="text-base">📄</span>
+                                    <span className="truncate">{attachment.name}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : null}
+
                             {isUser ? (
                               <p className="whitespace-pre-wrap text-sm leading-7">{message.content}</p>
                             ) : (
@@ -1432,7 +1498,7 @@ export function ChatShell({ user }: ChatShellProps) {
                     <input
                       ref={fileInputRef}
                       type="file"
-                      accept=".md,.txt"
+                      accept=".md,.txt,.pdf,application/pdf,text/plain,text/markdown"
                       className="hidden"
                       onChange={handleFileSelect}
                     />

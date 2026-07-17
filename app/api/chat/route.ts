@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { getErrorMessage } from "@/lib/utils";
+import { getErrorMessage, logError } from "@/lib/utils";
 import { isChatRequestBody } from "@/lib/validators/chat";
 import {
   chatPersistenceService,
@@ -63,6 +63,21 @@ export async function POST(request: Request) {
 
     const body: unknown = await request.json();
 
+    console.error("[api/chat POST] incoming request", {
+      hasMessages: typeof body === "object" && body !== null && Array.isArray((body as { messages?: unknown }).messages),
+      conversationId: typeof body === "object" && body !== null ? (body as { conversationId?: unknown }).conversationId ?? null : null,
+      attachedFileId:
+        typeof body === "object" && body !== null && typeof (body as { attachedFile?: { id?: unknown } }).attachedFile?.id === "string"
+          ? (body as { attachedFile: { id: string } }).attachedFile.id
+          : null,
+      attachedFileIds:
+        typeof body === "object" && body !== null && Array.isArray((body as { attachedFiles?: unknown }).attachedFiles)
+          ? ((body as { attachedFiles: Array<{ id?: unknown }> }).attachedFiles)
+              .map((attachment) => (typeof attachment?.id === "string" ? attachment.id : null))
+              .filter((id): id is string => Boolean(id))
+          : [],
+    });
+
     if (!isChatRequestBody(body)) {
       const error: ApiError = {
         error: "Invalid chat payload.",
@@ -85,6 +100,12 @@ export async function POST(request: Request) {
         ];
 
     const latestUserMessage = getLatestUserMessage(normalizedMessages);
+
+    console.error("[api/chat POST] normalized request state", {
+      latestUserMessageId: latestUserMessage?.id ?? null,
+      latestUserMessageAttachments: latestUserMessage?.attachments ?? [],
+      messageCount: normalizedMessages.length,
+    });
 
     if (!latestUserMessage) {
       const error: ApiError = {
@@ -139,6 +160,14 @@ export async function POST(request: Request) {
               userId: user.id,
             });
 
+            console.error("[api/chat POST] chatService.createReply response", {
+              conversationId: response.conversationId,
+              replyId: response.reply.id,
+              replyAttachments: response.reply.attachments ?? [],
+              agentFileId: response.agent?.sources ?? [],
+              warnings: response.warnings ?? [],
+            });
+
             const finalPayload: ChatResponseBody = {
               ...response,
               warnings,
@@ -169,6 +198,7 @@ export async function POST(request: Request) {
               warnings,
             });
           } catch (error) {
+            logError("chat-api.stream", error, { conversationId });
             pushEvent("error", {
               error: "Unable to process the chat request.",
               details: getErrorMessage(error),

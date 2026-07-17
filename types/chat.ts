@@ -11,6 +11,7 @@ export interface ChatMessage {
   sources?: string[];
   usedTools?: string[];
   steps?: string[];
+  attachments?: UploadedFileMetadata[];
 }
 
 export interface ChatRequestBody {
@@ -19,6 +20,7 @@ export interface ChatRequestBody {
   conversationId?: string;
   model?: string;
   attachedFile?: UploadedFileMetadata | null;
+  attachedFiles?: UploadedFileMetadata[] | null;
 }
 
 export interface ChatResponseBody {

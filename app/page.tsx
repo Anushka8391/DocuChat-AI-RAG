@@ -35,15 +35,15 @@ export default function Home() {
         </div>
 
         <p className="mt-5 text-sm font-semibold uppercase tracking-[0.24em] text-[var(--muted)]">
-          AgenticRAG
+          DocuChat AI
         </p>
 
         <h1 className="mt-4 text-4xl font-semibold tracking-tight md:text-5xl">
-          AI chat grounded in your files.
+          Chat with Your Documents Using AI
         </h1>
 
         <p className="mt-4 text-sm leading-7 text-[var(--muted)] md:text-base">
-          Ask questions about your documents, get live date and weather answers, and have natural conversations — all in one clean workspace.
+          Upload your documents and ask questions using AI-powered semantic search. Get accurate, context-aware answers with real-time weather and date tools.
         </p>
 
         <div className="mt-8 flex flex-col gap-3 sm:flex-row">

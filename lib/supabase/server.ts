@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
 import { getSupabaseEnv } from "@/lib/env";
+import { logError } from "@/lib/utils";
 
 export async function createSupabaseServerClient() {
   const cookieStore = await cookies();
@@ -17,8 +18,8 @@ export async function createSupabaseServerClient() {
           cookiesToSet.forEach(({ name, value, options }) => {
             cookieStore.set(name, value, options);
           });
-        } catch {
-          // Ignore cookie writes in server components; middleware refreshes the session.
+        } catch (error) {
+          logError("supabase.server.setAll", error);
         }
       },
     },

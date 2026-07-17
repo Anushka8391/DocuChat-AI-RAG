@@ -5,6 +5,7 @@ import { ChatPromptTemplate } from "@langchain/core/prompts";
 import { AgentExecutor, createToolCallingAgent } from "langchain/agents";
 
 import { env } from "@/lib/env";
+import { logError } from "@/lib/utils";
 import type { AgentRunResult, AgentStructuredResponse, AgentToolInvocation } from "@/types/agent";
 import type { ChatMessage } from "@/types/chat";
 import type { UploadedFileMetadata } from "@/types/file";
@@ -92,6 +93,16 @@ function buildAgentInput(message: string, attachedFile?: UploadedFileMetadata | 
   ].join("\n");
 }
 
+function logAttachedFile(context: string, attachedFile?: UploadedFileMetadata | null) {
+  console.error(`[${context}] attached file`, {
+    id: attachedFile?.id ?? null,
+    name: attachedFile?.name ?? null,
+    bucket: attachedFile?.bucket ?? null,
+    path: attachedFile?.path ?? null,
+    downloadUrl: attachedFile?.downloadUrl ?? null,
+  });
+}
+
 function extractJsonBlock(value: string) {
   const trimmed = value.trim();
 
@@ -160,8 +171,8 @@ function parseStructuredResponse(
             ? parsed.usedTools.map(String)
             : fallbackUsedTools,
       };
-    } catch {
-      // Fall through to the plain-text fallback.
+    } catch (error) {
+      logError("langchain.parseStructuredResponse", error, { rawOutput });
     }
   }
 
@@ -215,6 +226,15 @@ class LangChainToolAgentService {
     const conversationId = input.conversationId ?? randomUUID();
     const latestUserMessage = getLatestUserMessage(input.messages);
 
+    logAttachedFile("langchain.run.input", input.attachedFile);
+    console.error("[langchain.run] incoming message", {
+      conversationId,
+      userId: input.userId,
+      model: input.model ?? null,
+      latestUserMessageId: latestUserMessage?.id ?? null,
+      latestUserAttachmentIds: latestUserMessage?.attachments?.map((attachment) => attachment.id) ?? [],
+    });
+
     if (!latestUserMessage) {
       return {
         conversationId,
@@ -260,6 +280,12 @@ class LangChainToolAgentService {
       output?: unknown;
       intermediateSteps?: unknown;
     };
+
+    console.error("[langchain.run] executor result", {
+      conversationId,
+      outputPreview: String(result.output ?? "").slice(0, 300),
+      intermediateStepCount: Array.isArray(result.intermediateSteps) ? result.intermediateSteps.length : 0,
+    });
 
     const toolInvocations = extractToolInvocations(result.intermediateSteps);
     const response = parseStructuredResponse(String(result.output ?? ""), toolInvocations);

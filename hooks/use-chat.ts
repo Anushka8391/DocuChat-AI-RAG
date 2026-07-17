@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { logError } from "@/lib/utils";
 import type { ChatConversationSummary, ChatMessage, UploadedFileMetadata } from "@/types";
 
 const STORAGE_KEY = "agentic-rag-chat-store-v3";
@@ -12,6 +13,7 @@ interface StoredConversation extends ChatConversationSummary {
 
 interface SendMessageOptions {
   attachedFile?: UploadedFileMetadata | null;
+  attachedFiles?: UploadedFileMetadata[] | null;
 }
 
 function buildTimestamp(minutesAgo: number = 0) {
@@ -30,7 +32,7 @@ function toSummary(conversation: StoredConversation): ChatConversationSummary {
 
 function createAssistantMessage(
   content: string,
-  metadata?: Pick<ChatMessage, "sources" | "usedTools" | "steps">,
+  metadata?: Pick<ChatMessage, "sources" | "usedTools" | "steps" | "attachments">,
 ): ChatMessage {
   return {
     id: crypto.randomUUID(),
@@ -40,6 +42,7 @@ function createAssistantMessage(
     sources: metadata?.sources,
     usedTools: metadata?.usedTools,
     steps: metadata?.steps,
+    attachments: metadata?.attachments,
   };
 }
 
@@ -58,6 +61,14 @@ function getPreview(messages: ChatMessage[]) {
   }
 
   return lastMessage.content.replace(/\s+/g, " ").trim().slice(0, 88);
+}
+
+function logAttachmentIds(context: string, attachments?: UploadedFileMetadata[] | null) {
+  console.error(`[${context}] attachments`, {
+    count: attachments?.length ?? 0,
+    ids: attachments?.map((attachment) => attachment.id) ?? [],
+    attachments: attachments ?? [],
+  });
 }
 
 
@@ -144,7 +155,8 @@ function loadStoredConversations() {
     }
 
     return sanitizeStoredConversations(parsed);
-  } catch {
+  } catch (error) {
+    logError("useChat.loadStoredConversations", error);
     return starterConversations;
   }
 }
@@ -154,7 +166,11 @@ function persistStoredConversations(conversations: StoredConversation[]) {
     return;
   }
 
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(sanitizeStoredConversations(conversations)));
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(sanitizeStoredConversations(conversations)));
+  } catch (error) {
+    logError("useChat.persistStoredConversations", error);
+  }
 }
 
 export function useChat(initialMessages: ChatMessage[] = []) {
@@ -278,10 +294,11 @@ export function useChat(initialMessages: ChatMessage[] = []) {
 
   const streamAssistantResponse = useCallback(
     async (
-      prompt: string,
+      _prompt: string,
       nextMessages: ChatMessage[],
       conversation: StoredConversation,
       attachedFile?: UploadedFileMetadata | null,
+      attachedFiles?: UploadedFileMetadata[] | null,
     ) => {
       const assistantId = crypto.randomUUID();
       const createdAt = new Date().toISOString();
@@ -297,9 +314,11 @@ export function useChat(initialMessages: ChatMessage[] = []) {
       ]);
 
       let streamedContent = "";
-      let finalMetadata: Pick<ChatMessage, "sources" | "usedTools" | "steps"> = {};
+      let finalMetadata: Pick<ChatMessage, "sources" | "usedTools" | "steps" | "attachments"> = {};
 
       try {
+        logAttachmentIds("useChat.streamAssistantResponse.request", attachedFiles?.length ? attachedFiles : attachedFile ? [attachedFile] : null);
+
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -307,6 +326,7 @@ export function useChat(initialMessages: ChatMessage[] = []) {
             messages: nextMessages,
             conversationId: conversation.id,
             attachedFile: attachedFile ?? null,
+            attachedFiles: attachedFiles ?? null,
           }),
         });
 
@@ -335,7 +355,8 @@ export function useChat(initialMessages: ChatMessage[] = []) {
 
             try {
               payload = JSON.parse(rawData) as Record<string, unknown>;
-            } catch {
+            } catch (parseError) {
+              logError("useChat.streamAssistantResponse.parseSse", parseError, { part });
               continue;
             }
 
@@ -357,10 +378,26 @@ export function useChat(initialMessages: ChatMessage[] = []) {
                 usedTools: Array.isArray(agent?.usedTools)
                   ? (agent.usedTools as string[])
                   : undefined,
+                attachments: Array.isArray(agent?.attachments)
+                  ? (agent.attachments as UploadedFileMetadata[])
+                  : attachedFiles?.length
+                    ? attachedFiles
+                    : attachedFile
+                      ? [attachedFile]
+                      : undefined,
               };
               const reply = payload.reply as Record<string, unknown> | undefined;
               if (typeof reply?.content === "string") {
                 streamedContent = reply.content;
+              }
+              const replyAttachments = Array.isArray(reply?.attachments)
+                ? (reply.attachments as UploadedFileMetadata[])
+                : undefined;
+              if (replyAttachments?.length) {
+                finalMetadata = {
+                  ...finalMetadata,
+                  attachments: replyAttachments,
+                };
               }
               setMessages((current) =>
                 current.map((message) =>
@@ -383,6 +420,7 @@ export function useChat(initialMessages: ChatMessage[] = []) {
         }
       } catch (err) {
         const errorText = err instanceof Error ? err.message : "Request failed.";
+        logError("useChat.streamAssistantResponse", err, { conversationId: conversation.id });
         streamedContent = errorText;
         setMessages((current) =>
           current.map((message) =>
@@ -433,7 +471,16 @@ export function useChat(initialMessages: ChatMessage[] = []) {
           role: "user",
           content,
           createdAt,
+          attachments: options.attachedFile ? [options.attachedFile] : undefined,
         };
+
+        console.error("[useChat.sendMessage] prepared message", {
+          conversationId: activeConversation.id,
+          messageId: userMessage.id,
+          attachmentIds: options.attachedFiles?.map((attachment) => attachment.id) ??
+            (options.attachedFile ? [options.attachedFile.id] : []),
+          attachments: options.attachedFiles?.length ? options.attachedFiles : options.attachedFile ? [options.attachedFile] : [],
+        });
 
         const nextMessages = [...activeConversation.messages, userMessage];
         const titledConversation = {
@@ -453,6 +500,7 @@ export function useChat(initialMessages: ChatMessage[] = []) {
           nextMessages,
           titledConversation,
           options.attachedFile ?? null,
+          options.attachedFiles ?? null,
         );
       } finally {
         setIsLoading(false);

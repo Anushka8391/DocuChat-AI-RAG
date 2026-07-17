@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { logError } from "@/lib/utils";
 import type {
   AgentStructuredResponse,
   AgentToolInvocation,
@@ -65,6 +66,7 @@ class ChatPersistenceService {
     );
 
     if (error) {
+      logError("chatPersistence.ensureConversation", error, { conversationId, userId: input.userId });
       throw error;
     }
 
@@ -92,6 +94,7 @@ class ChatPersistenceService {
     });
 
     if (error) {
+      logError("chatPersistence.storeMessage", error, { conversationId: input.conversationId, userId: input.userId });
       throw error;
     }
 
@@ -102,6 +105,7 @@ class ChatPersistenceService {
       .eq("user_id", input.userId);
 
     if (updateError) {
+      logError("chatPersistence.updateConversation", updateError, { conversationId: input.conversationId, userId: input.userId });
       throw updateError;
     }
   }
